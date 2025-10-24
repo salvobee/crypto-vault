@@ -21,6 +21,13 @@
             border-radius: 8px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.1);
         }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            align-items: center;
+        }
+        .muted { color: #666; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -50,6 +57,15 @@
     <button id="btnDecText" disabled>Decrypt Text</button>
 </div>
 <div class="row">
+    <div class="grid">
+        <div>
+            <progress id="textProg" value="0" max="100" style="width:100%;"></progress>
+            <div id="textProgLabel" class="muted">0%</div>
+        </div>
+        <button id="btnCancelText" class="muted" title="Cancel current text op">Cancel</button>
+    </div>
+</div>
+<div class="row">
     <label>Ciphertext (Base64URL):</label>
     <textarea id="cipherText" placeholder="It will appear here..."></textarea>
 </div>
@@ -67,6 +83,18 @@
 <div class="row">
     <button id="btnEncFile" disabled>Encrypt File</button>
     <button id="btnDecFile" disabled>Decrypt File → Show Preview</button>
+</div>
+<div class="row">
+    <div class="grid">
+        <div>
+            <progress id="fileProg" value="0" max="100" style="width:100%;"></progress>
+            <div id="fileProgLabel" class="muted">0%</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+            <button id="btnCancelEnc" class="muted" title="Cancel encryption">Cancel Encrypt</button>
+            <button id="btnCancelDec" class="muted" title="Cancel decryption">Cancel Decrypt</button>
+        </div>
+    </div>
 </div>
 <div class="row">
     <label>Ciphertext (Base64URL):</label>
@@ -89,9 +117,24 @@
     let KEY = null;
     let lastPackedBlob = "";
 
+    // AbortControllers for each op
+    let encFileController = null;
+    let decFileController = null;
+    let textController = null;
+
+    // Helpers
     const $ = (id) => document.getElementById(id);
     const enableKeyActions = (on) => {
         ["btnExportKey","btnEncText","btnDecText","btnEncFile","btnDecFile"].forEach(id => $(id).disabled = !on);
+    };
+    const resetTextProgress = () => { $("textProg").value = 0; $("textProgLabel").textContent = "0%"; };
+    const resetFileProgress = () => { $("fileProg").value = 0; $("fileProgLabel").textContent = "0%"; };
+    const setBusy = (busy) => {
+        // Basic UI lock to avoid double clicks; adapt as you like
+        document.querySelectorAll("button, input, textarea").forEach(el => {
+            if (el.id?.startsWith("btnCancel")) return; // keep cancel buttons active
+            el.disabled = busy ? true : el.disabled;
+        });
     };
 
     $("btnGenKey").addEventListener("click", async () => {
@@ -117,40 +160,130 @@
         }
     });
 
-    // Text
+    // TEXT ENCRYPT / DECRYPT with minimal progress (0 → 100)
     $("btnEncText").addEventListener("click", async () => {
+        if (!KEY) return;
         const plain = $("plainText").value;
         const compress = $("compressText").checked;
-        $("cipherText").value = await encryptString(plain, KEY, { compress });
-    });
 
-    $("btnDecText").addEventListener("click", async () => {
+        textController?.abort(); // cancel previous
+        textController = new AbortController();
+
+        resetTextProgress();
+        $("textProgLabel").textContent = "Encrypting...";
         try {
-            const plain = await decryptToString($("cipherText").value.trim(), KEY);
-            $("plainText").value = plain;
+            const packed = await encryptString(plain, KEY, { compress });
+            // No granular progress from encryptString; set to 100% when done:
+            $("textProg").value = 100; $("textProgLabel").textContent = "100%";
+            $("cipherText").value = packed;
         } catch (e) {
-            console.error(e);
-            alert("Error decrypting text.");
+            if (e.name === "AbortError") {
+                $("textProgLabel").textContent = "Canceled.";
+            } else {
+                console.error(e);
+                $("textProgLabel").textContent = "Error.";
+                alert("Error encrypting text.");
+            }
+        } finally {
+            textController = null;
         }
     });
 
-    // Files (images, videos, etc.)
+    $("btnDecText").addEventListener("click", async () => {
+        if (!KEY) return;
+        const packed = $("cipherText").value.trim();
+        if (!packed) return;
+
+        textController?.abort();
+        textController = new AbortController();
+
+        resetTextProgress();
+        $("textProgLabel").textContent = "Decrypting...";
+        try {
+            const plain = await decryptToString(packed, KEY, {
+                signal: textController.signal,
+                onProgress: ({ percent }) => { $("textProg").value = percent; $("textProgLabel").textContent = `${percent}%`; }
+            });
+            $("plainText").value = plain;
+            $("textProg").value = 100; $("textProgLabel").textContent = "100%";
+        } catch (e) {
+            if (e.name === "AbortError") {
+                $("textProgLabel").textContent = "Canceled.";
+            } else {
+                console.error(e);
+                $("textProgLabel").textContent = "Error.";
+                alert("Error decrypting text.");
+            }
+        } finally {
+            textController = null;
+        }
+    });
+
+    $("btnCancelText").addEventListener("click", () => textController?.abort());
+
+    // FILE ENCRYPT with granular progress
     $("btnEncFile").addEventListener("click", async () => {
+        if (!KEY) return;
         const file = $("fileInput").files?.[0];
         if (!file) return alert("Select a file first.");
         const compress = $("compressFile").checked;
         const chunkSize = parseInt($("chunkSize").value || "1048576", 10);
-        const packed = await encryptBlob(file, KEY, { compress, chunkSize });
-        $("cipherBlob").value = packed;
-        lastPackedBlob = packed;
-        alert("File encrypted and serialized to Base64URL.");
+
+        encFileController?.abort();
+        encFileController = new AbortController();
+
+        resetFileProgress();
+        $("fileProgLabel").textContent = "Encrypting...";
+        try {
+            const packed = await encryptBlob(file, KEY, {
+                compress,
+                chunkSize,
+                signal: encFileController.signal,
+                onProgress: ({ percent, processed, total }) => {
+                    $("fileProg").value = percent;
+                    $("fileProgLabel").textContent = `${percent}% (${processed}/${total} bytes)`;
+                }
+            });
+            $("cipherBlob").value = packed;
+            lastPackedBlob = packed;
+            $("fileProg").value = 100; $("fileProgLabel").textContent = "100%";
+            alert("File encrypted and serialized to Base64URL.");
+        } catch (e) {
+            if (e.name === "AbortError") {
+                $("fileProgLabel").textContent = "Canceled.";
+            } else {
+                console.error(e);
+                $("fileProgLabel").textContent = "Error.";
+                alert("Error encrypting file.");
+            }
+        } finally {
+            encFileController = null;
+        }
     });
 
+    $("btnCancelEnc").addEventListener("click", () => encFileController?.abort());
+
+    // FILE DECRYPT with granular progress + preview
     $("btnDecFile").addEventListener("click", async () => {
+        if (!KEY) return;
         const packed = $("cipherBlob").value.trim() || lastPackedBlob;
         if (!packed) return alert("No encrypted content.");
+
+        decFileController?.abort();
+        decFileController = new AbortController();
+
+        resetFileProgress();
+        $("fileProgLabel").textContent = "Decrypting...";
         try {
-            const blob = await decryptToBlob(packed, KEY);
+            const blob = await decryptToBlob(packed, KEY, {
+                signal: decFileController.signal,
+                onProgress: ({ percent, processed, total }) => {
+                    $("fileProg").value = percent;
+                    $("fileProgLabel").textContent = `${percent}% (${processed}/${total} bytes)`;
+                }
+            });
+            $("fileProg").value = 100; $("fileProgLabel").textContent = "100%";
+
             const url = URL.createObjectURL(blob);
 
             // Hide both first
@@ -171,13 +304,22 @@
                 a.download = "decrypted_" + (blob.type?.split("/")[1] || "bin");
                 a.click();
             }
-
         } catch (e) {
-            console.error(e);
-            alert("Error decrypting file.");
+            if (e.name === "AbortError") {
+                $("fileProgLabel").textContent = "Canceled.";
+            } else {
+                console.error(e);
+                $("fileProgLabel").textContent = "Error.";
+                alert("Error decrypting file.");
+            }
+        } finally {
+            decFileController = null;
         }
     });
 
+    $("btnCancelDec").addEventListener("click", () => decFileController?.abort());
+
+    // init
     enableKeyActions(false);
 </script>
 </body>

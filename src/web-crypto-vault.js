@@ -208,27 +208,38 @@ async function decryptToString(packedB64u, key) {
 // ---------- API: File/blob encryption/decryption (chunked) ----------
 async function encryptBlob(blob, key, {
     compress = true,
-    chunkSize = DEFAULT_CHUNK_SIZE
+    chunkSize = DEFAULT_CHUNK_SIZE,
+    onProgress,         // (info) => void
+    signal              // AbortSignal
 } = {}) {
-    // Read-all for optional compression -> for very large files chunk-first could be more memory-friendly.
-    // Tradeoff: if file > 64 MiB, compress per chunk.
     const mime = blob.type || "application/octet-stream";
     const size = blob.size;
     const CHUNK_COMPRESS_THRESHOLD = 64 * 1024 * 1024;
-
     const isLarge = size > CHUNK_COMPRESS_THRESHOLD;
-    const aadBase = `${ALG}|blob|v${VERSION}|${mime}`;
-    const aad = textEncode(aadBase);
+    const aad = textEncode(`${ALG}|blob|v${VERSION}|${mime}`);
+
+    const report = (processed) => {
+        if (typeof onProgress === "function") {
+            const percent = size ? Math.min(100, Math.round((processed / size) * 100)) : 100;
+            onProgress({ processed, total: size, percent });
+        }
+    };
+    const checkAbort = () => {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    };
 
     // Strategy:
     // - If large: stream in chunks, optionally compress per chunk, encrypt each chunk with a fresh random IV.
     // - If small: read into memory, optionally compress whole buffer, encrypt once.
     if (!isLarge) {
+        checkAbort();
+        report(0);
         const buf = new Uint8Array(await blob.arrayBuffer());
         const { compressed, data } = await maybeCompress(buf, compress);
         const iv = randomIv();
         const ct = await aesGcmEncrypt(key, iv, data, aad);
         const meta = { type: "blob", alg: ALG, mime, compressed, single: true, iv: toBase64Url(iv), size };
+        report(size);
         return packContainer({ compressed, isChunked: false, meta, payloadU8: ct });
     }
 
@@ -238,7 +249,11 @@ async function encryptBlob(blob, key, {
     const chunkCount = Math.ceil(size / chunkSize);
     const payloadParts = [];
 
+    let processed = 0;
+    report(0);
+
     for (let i = 0; i < chunkCount; i++) {
+        checkAbort();
         const start = i * chunkSize;
         const end = Math.min(start + chunkSize, size);
         const u8 = new Uint8Array(await blob.slice(start, end).arrayBuffer());
@@ -247,48 +262,83 @@ async function encryptBlob(blob, key, {
         const ct = await aesGcmEncrypt(key, iv, data, aad);
         const lenU8 = u32be(ct.length);
         payloadParts.push(lenU8, iv, ct);
+
+        processed = end;
+        report(processed);
     }
 
     const meta = {
         type: "blob",
         alg: ALG,
         mime,
-        compressed: useCompression, // reflects actual behavior
+        compressed: useCompression,
         chunked: true,
         chunkSize,
         size
     };
     const payloadU8 = concatU8(...payloadParts);
+    report(size);
     return packContainer({ compressed: useCompression, isChunked: true, meta, payloadU8 });
 }
 
-async function decryptToBlob(packedB64u, key) {
+async function decryptToBlob(packedB64u, key, {
+    onProgress,        // (info) => void
+    signal             // AbortSignal
+} = {}) {
     const { compressed, isChunked, meta, payloadU8 } = unpackContainer(packedB64u);
     if (meta.type !== "blob") throw new Error("Content type is not blob.");
     const mime = meta.mime || "application/octet-stream";
     const aad = textEncode(`${ALG}|blob|v${VERSION}|${mime}`);
 
+    const total = typeof meta.size === "number" ? meta.size : 0;
+    const report = (processed) => {
+        if (typeof onProgress === "function") {
+            const percent = total ? Math.min(100, Math.round((processed / total) * 100)) : (processed ? 100 : 0);
+            onProgress({ processed, total, percent });
+        }
+    };
+    const checkAbort = () => {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    };
+
+    // Single-chunk (small)
     if (!isChunked && meta.single) {
+        checkAbort();
+        report(0);
         const iv = fromBase64Url(meta.iv);
         const pt = await aesGcmDecrypt(key, iv, payloadU8, aad);
         const u8 = await maybeDecompress(pt, meta.compressed);
+        // processed ~ meta.size (se presente), altrimenti usiamo byte decompattati
+        report(total || u8.length);
         return new Blob([u8], { type: mime });
     }
 
-    // chunked
+    // Chunked (large)
     let off = 0;
+    let processed = 0;
+    report(0);
+
     const outParts = [];
     while (off < payloadU8.length) {
+        checkAbort();
+
         if (off + 4 > payloadU8.length) throw new Error("Corrupted chunk container (len).");
         const clen = readU32be(payloadU8, off); off += 4;
         if (off + IV_BYTES + clen > payloadU8.length) throw new Error("Corrupted chunk container (data).");
+
         const iv = payloadU8.subarray(off, off + IV_BYTES); off += IV_BYTES;
         const ct = payloadU8.subarray(off, off + clen); off += clen;
+
         const pt = await aesGcmDecrypt(key, iv, ct, aad);
-        const u8 = await maybeDecompress(pt, compressed); // compressed=true means per-chunk compression was used
+        const u8 = await maybeDecompress(pt, compressed);
+
         outParts.push(u8);
+        processed += u8.length;
+        report(Math.min(processed, total || processed)); // clamp se total=0
     }
+
     const merged = concatU8(...outParts);
+    report(total || merged.length);
     return new Blob([merged], { type: mime });
 }
 
