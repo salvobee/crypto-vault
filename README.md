@@ -1,4 +1,4 @@
-Web Crypto Vault
+Crypto Vault
 
 Browser-only crypto vault — zero deps, ESM.
 Uses **AES-GCM-256** (Web Crypto API), supports **strings** and **files** (small or large) with **chunked encryption**, optional **Gzip** (Compression Streams API), and always serializes to **Base64URL** so you can store/send ciphertext as plain text (e.g. via APIs or DB).
@@ -14,11 +14,11 @@ Uses **AES-GCM-256** (Web Crypto API), supports **strings** and **files** (small
 ## Install
 
 ```bash
-npm i @salvobee/web-crypto-vault
+npm i @salvobee/crypto-vault
 # or
-pnpm add @salvobee/web-crypto-vault
+pnpm add @salvobee/crypto-vault
 # or
-yarn add @salvobee/web-crypto-vault
+yarn add @salvobee/crypto-vault
 ```
 
 > This package is **ESM** and **browser-only**. Use it in modern browsers (served over HTTPS / localhost).
@@ -34,7 +34,7 @@ yarn add @salvobee/web-crypto-vault
     encryptString, decryptToString,
     encryptBlob,  decryptToBlob,
     exportKeyToBase64, importKeyFromBase64,
-  } from "@salvobee/web-crypto-vault";
+  } from "@salvobee/crypto-vault";
 
   // 1) Key (recommended: generate once, then export & store safely)
   const key = await generateAesKey();
@@ -190,7 +190,7 @@ Exposed in case you need consistent Base64URL conversion elsewhere in your app.
 <video id="vid" controls style="display:none;max-width:100%"></video>
 
 <script type="module">
-import { generateAesKey, encryptBlob, decryptToBlob } from "@salvobee/web-crypto-vault";
+import { generateAesKey, encryptBlob, decryptToBlob } from "@salvobee/crypto-vault";
 
 const key = await generateAesKey();
 
@@ -221,7 +221,7 @@ document.getElementById("pick").addEventListener("change", async (e) => {
 ### Persist and reload keys
 
 ```js
-import { generateAesKey, exportKeyToBase64, importKeyFromBase64 } from "@salvobee/web-crypto-vault";
+import { generateAesKey, exportKeyToBase64, importKeyFromBase64 } from "@salvobee/crypto-vault";
 
 const key = await generateAesKey();
 const b64 = await exportKeyToBase64(key);
@@ -233,7 +233,7 @@ const key2 = await importKeyFromBase64(b64); // Restore later
 ### Derive a key from passphrase
 
 ```js
-import { deriveKeyFromPassphrase } from "@salvobee/web-crypto-vault";
+import { deriveKeyFromPassphrase } from "@salvobee/crypto-vault";
 
 const salt = crypto.getRandomValues(new Uint8Array(16));
 // store salt somewhere safe with the ciphertext

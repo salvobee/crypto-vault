@@ -1,14 +1,14 @@
 {
-  "name": "@salvobee/web-crypto-vault",
+  "name": "@salvobee/crypto-vault",
   "version": "1.0.0",
   "description": "Browser crypto vault: AES-GCM 256, chunked blobs, optional gzip, base64url packaging.",
   "type": "module",
   "exports": {
     ".": {
-      "import": "./src/web-crypto-vault.js"
+      "import": "./src/crypto-vault.js"
     }
   },
-  "main": "./src/web-crypto-vault.js",
+  "main": "./src/crypto-vault.js",
   "keywords": ["crypto", "browser", "aes-gcm", "encryption", "blob", "gzip", "base64url"],
   "license": "MIT"
 }
