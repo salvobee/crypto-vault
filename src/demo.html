@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Web Crypto Vault – Demo</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 24px; background: #f8f9fa; color: #222; }
+        textarea { width: 100%; height: 120px; font-family: monospace; }
+        .row { margin: 12px 0; }
+        code { user-select: all; word-break: break-all; }
+        hr { margin: 24px 0; }
+        .preview {
+            margin-top: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        #previewImage, #previewVideo {
+            max-width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+<h1>🔒 Web Crypto Vault – Demo</h1>
+
+<div class="row">
+    <button id="btnGenKey">Generate AES-GCM 256 Key</button>
+    <button id="btnExportKey" disabled>Export Key (Base64URL)</button>
+    <button id="btnImportKey">Import Key (paste below)</button>
+</div>
+<div class="row">
+    <label>Key (Base64URL JWK):</label>
+    <textarea id="keyBox" placeholder="Paste a Base64URL key here to import"></textarea>
+</div>
+
+<hr/>
+
+<h2>Text Test</h2>
+<div class="row">
+    <textarea id="plainText" placeholder="Write plain text...">Hello, encrypted world!</textarea>
+</div>
+<div class="row">
+    <label><input type="checkbox" id="compressText" checked /> Compress before encrypting (Gzip)</label>
+</div>
+<div class="row">
+    <button id="btnEncText" disabled>Encrypt Text</button>
+    <button id="btnDecText" disabled>Decrypt Text</button>
+</div>
+<div class="row">
+    <label>Ciphertext (Base64URL):</label>
+    <textarea id="cipherText" placeholder="It will appear here..."></textarea>
+</div>
+
+<hr/>
+
+<h2>Files / Blobs (images, videos, pdf, etc.)</h2>
+<div class="row">
+    <input type="file" id="fileInput" />
+</div>
+<div class="row">
+    <label><input type="checkbox" id="compressFile" checked /> Compress before encrypting (Gzip)</label>
+    <label style="margin-left:16px;">Chunk size: <input type="number" id="chunkSize" value="1048576" min="65536" step="65536"/> bytes</label>
+</div>
+<div class="row">
+    <button id="btnEncFile" disabled>Encrypt File</button>
+    <button id="btnDecFile" disabled>Decrypt File → Show Preview</button>
+</div>
+<div class="row">
+    <label>Ciphertext (Base64URL):</label>
+    <textarea id="cipherBlob" placeholder="It will appear here..."></textarea>
+</div>
+
+<!-- Preview section -->
+<div class="preview">
+    <img id="previewImage" alt="Decrypted image preview" style="display:none;">
+    <video id="previewVideo" controls style="display:none;"></video>
+</div>
+
+<script type="module">
+    import {
+        generateAesKey, exportKeyToBase64, importKeyFromBase64,
+        encryptString, decryptToString,
+        encryptBlob, decryptToBlob,
+    } from "./web-crypto-vault.js";
+
+    let KEY = null;
+    let lastPackedBlob = "";
+
+    const $ = (id) => document.getElementById(id);
+    const enableKeyActions = (on) => {
+        ["btnExportKey","btnEncText","btnDecText","btnEncFile","btnDecFile"].forEach(id => $(id).disabled = !on);
+    };
+
+    $("btnGenKey").addEventListener("click", async () => {
+        KEY = await generateAesKey();
+        enableKeyActions(true);
+        alert("Key generated!");
+    });
+
+    $("btnExportKey").addEventListener("click", async () => {
+        if (!KEY) return;
+        $("keyBox").value = await exportKeyToBase64(KEY);
+    });
+
+    $("btnImportKey").addEventListener("click", async () => {
+        const b64 = $("keyBox").value.trim();
+        if (!b64) return alert("Paste a Base64URL key first.");
+        try {
+            KEY = await importKeyFromBase64(b64);
+            enableKeyActions(true);
+            alert("Key imported!");
+        } catch {
+            alert("Invalid key.");
+        }
+    });
+
+    // Text
+    $("btnEncText").addEventListener("click", async () => {
+        const plain = $("plainText").value;
+        const compress = $("compressText").checked;
+        $("cipherText").value = await encryptString(plain, KEY, { compress });
+    });
+
+    $("btnDecText").addEventListener("click", async () => {
+        try {
+            const plain = await decryptToString($("cipherText").value.trim(), KEY);
+            $("plainText").value = plain;
+        } catch (e) {
+            console.error(e);
+            alert("Error decrypting text.");
+        }
+    });
+
+    // Files (images, videos, etc.)
+    $("btnEncFile").addEventListener("click", async () => {
+        const file = $("fileInput").files?.[0];
+        if (!file) return alert("Select a file first.");
+        const compress = $("compressFile").checked;
+        const chunkSize = parseInt($("chunkSize").value || "1048576", 10);
+        const packed = await encryptBlob(file, KEY, { compress, chunkSize });
+        $("cipherBlob").value = packed;
+        lastPackedBlob = packed;
+        alert("File encrypted and serialized to Base64URL.");
+    });
+
+    $("btnDecFile").addEventListener("click", async () => {
+        const packed = $("cipherBlob").value.trim() || lastPackedBlob;
+        if (!packed) return alert("No encrypted content.");
+        try {
+            const blob = await decryptToBlob(packed, KEY);
+            const url = URL.createObjectURL(blob);
+
+            // Hide both first
+            $("previewImage").style.display = "none";
+            $("previewVideo").style.display = "none";
+
+            // Show by MIME
+            if (blob.type.startsWith("image/")) {
+                $("previewImage").src = url;
+                $("previewImage").style.display = "block";
+            } else if (blob.type.startsWith("video/")) {
+                $("previewVideo").src = url;
+                $("previewVideo").style.display = "block";
+            } else {
+                alert(`Decrypted file type: ${blob.type}. Downloading instead.`);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "decrypted_" + (blob.type?.split("/")[1] || "bin");
+                a.click();
+            }
+
+        } catch (e) {
+            console.error(e);
+            alert("Error decrypting file.");
+        }
+    });
+
+    enableKeyActions(false);
+</script>
+</body>
+</html>
