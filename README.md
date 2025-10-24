@@ -1,4 +1,4 @@
-Crypto Vault
+# Crypto Vault
 
 Browser-only crypto vault — zero deps, ESM.
 Uses **AES-GCM-256** (Web Crypto API), supports **strings** and **files** (small or large) with **chunked encryption**, optional **Gzip** (Compression Streams API), and always serializes to **Base64URL** so you can store/send ciphertext as plain text (e.g. via APIs or DB).
