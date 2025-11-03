@@ -1,13 +1,13 @@
 # Crypto Vault
 
-Browser-only crypto vault — zero deps, ESM.
-Uses **AES-GCM-256** (Web Crypto API), supports **strings** and **files** (small or large) with **chunked encryption**, optional **Gzip** (Compression Streams API), and always serializes to **Base64URL** so you can store/send ciphertext as plain text (e.g. via APIs or DB).
+Universal (browser + Node.js) crypto vault — zero deps, ESM.
+Uses **AES-GCM-256** (Web Crypto API / Node WebCrypto), supports **strings** and **files/binary buffers** (small or large) with **chunked encryption**, optional **gzip** compression, and always serializes to **Base64URL** so you can store/send ciphertext as plain text (e.g. via APIs or DB).
 
 * 🔐 AES-GCM 256 (authenticated encryption)
 * 🧩 Chunked blobs for large files (images, videos, PDFs…)
 * 🗜️ Optional gzip compression
 * 🔤 Base64URL packaging (portable, DB/API-friendly)
-* 🌐 100% browser APIs, no dependencies
+* 🌐 Works in modern browsers *and* Node 18+ (uses Web Crypto & gzip in each environment)
 
 ---
 
@@ -21,7 +21,7 @@ pnpm add @salvobee/crypto-vault
 yarn add @salvobee/crypto-vault
 ```
 
-> This package is **ESM** and **browser-only**. Use it in modern browsers (served over HTTPS / localhost).
+> This package is **ESM** and works in modern browsers (served over HTTPS / localhost) **and** Node.js ≥ 18.
 
 ---
 
@@ -56,11 +56,19 @@ yarn add @salvobee/crypto-vault
 
 ---
 
-## Browser requirements
+## Runtime requirements
+
+### Browsers
 
 * **Web Crypto API** (`crypto.subtle`) — widely supported on modern browsers when served over **HTTPS** or **localhost**.
-* **Compression Streams API** (`CompressionStream`/`DecompressionStream`) — optional; if unavailable, compression is silently skipped.
-* For **very large outputs**, Base64URL strings can be huge; consider chunking at the application level if you need to stream/store in slices.
+* **Compression Streams API** (`CompressionStream`/`DecompressionStream`) — optional; if unavailable, compression is silently skipped during encryption and decryption.
+
+### Node.js
+
+* Node **18+** (ships with `globalThis.crypto`, WHATWG streams, and `Blob`).
+* Gzip compression uses `node:zlib` when browser streams are not available.
+
+For **very large outputs**, Base64URL strings can be huge; consider chunking at the application level if you need to stream/store in slices.
 
 ---
 
@@ -136,9 +144,9 @@ Decrypts a `packed` Base64URL produced by `encryptString`.
 const text = await decryptToString(packed, key);
 ```
 
-#### `encryptBlob(blob: Blob, key: CryptoKey, opts?: { compress?: boolean, chunkSize?: number }): Promise<string>`
+#### `encryptBlob(blob: Blob | ArrayBuffer | ArrayBufferView | Buffer, key: CryptoKey, opts?: { compress?: boolean, chunkSize?: number, mimeType?: string }): Promise<string>`
 
-Encrypts any `Blob`/`File` (images, videos, PDFs, etc.).
+Encrypts binary data from browsers (`Blob`/`File`) or Node (`Buffer`/`Uint8Array`).
 
 * Small files are encrypted as a single chunk.
 * Large files (default threshold 64 MiB) are **chunked**; each chunk is encrypted with a fresh IV.
@@ -147,14 +155,19 @@ Encrypts any `Blob`/`File` (images, videos, PDFs, etc.).
     * For small files: compress whole buffer.
     * For large files: compress **per chunk**.
 * `chunkSize` (default 1 MiB) controls chunk granularity for large files.
+* `mimeType` lets you provide a MIME type when the input is not a `Blob` (e.g. Node buffers).
 
 ```js
 const packed = await encryptBlob(file, key, { compress: true, chunkSize: 2 * 1024 * 1024 });
 ```
 
-#### `decryptToBlob(packedB64u: string, key: CryptoKey): Promise<Blob>`
+#### `decryptToBlob(packedB64u: string, key: CryptoKey, opts?: { output?: "blob" | "uint8array" | "buffer" }): Promise<Blob | Uint8Array | Buffer>`
 
-Decrypts a `packed` Base64URL produced by `encryptBlob`, returning a `Blob` with the original MIME type.
+Decrypts a `packed` Base64URL produced by `encryptBlob`.
+
+* Default output is a `Blob` (browser-friendly).
+* `output: "uint8array"` returns the raw bytes.
+* `output: "buffer"` (Node only) returns a `Buffer`.
 
 ```js
 const blob = await decryptToBlob(packed, key);
@@ -165,9 +178,9 @@ const url = URL.createObjectURL(blob);
 
 ### Utilities
 
-#### `downloadText(filename: string, text: string): void`
+#### `downloadText(filename: string, text: string): Blob | Uint8Array | Buffer | void`
 
-Tiny helper to trigger a download of a text string (e.g., for keys).
+Tiny helper to trigger a download of a text string. In browsers it triggers the download and returns the generated `Blob`. In Node it returns a `Buffer` (or `Uint8Array` if `Buffer` is unavailable) so you can persist the data manually.
 
 ```js
 downloadText("vault-key.jwk.b64u.txt", await exportKeyToBase64(key));

@@ -4,6 +4,9 @@ import { packContainer, unpackContainer } from "./container.js";
 import { randomIv } from "./keys.js";
 import { concatU8, readU32be, u32be } from "./binary.js";
 import { fromBase64Url, textDecode, textEncode, toBase64Url } from "./base64.js";
+import { getSubtleCrypto } from "./env/crypto.js";
+import { createBinaryBlob, createBinarySource, hasBufferSupport, toBuffer } from "./env/file.js";
+import type { BinaryLike, NodeBuffer } from "./env/file.js";
 
 interface ProgressInfo {
     processed: number;
@@ -23,9 +26,14 @@ export interface EncryptStringOptions {
 export interface EncryptBlobOptions extends ProgressOptions {
     compress?: boolean;
     chunkSize?: number;
+    mimeType?: string;
 }
 
-export interface DecryptBlobOptions extends ProgressOptions {}
+export type BinaryOutputType = "blob" | "uint8array" | "buffer";
+
+export interface DecryptBlobOptions extends ProgressOptions {
+    output?: BinaryOutputType;
+}
 
 async function aesGcmEncrypt(
     key: CryptoKey,
@@ -33,7 +41,8 @@ async function aesGcmEncrypt(
     dataU8: Uint8Array,
     additionalDataU8?: Uint8Array
 ): Promise<Uint8Array> {
-    const ct = await crypto.subtle.encrypt(
+    const subtle = getSubtleCrypto();
+    const ct = await subtle.encrypt(
         { name: ALG, iv: ivU8 as BufferSource, additionalData: additionalDataU8 as BufferSource | undefined },
         key,
         dataU8 as BufferSource
@@ -47,7 +56,8 @@ async function aesGcmDecrypt(
     cipherU8: Uint8Array,
     additionalDataU8?: Uint8Array
 ): Promise<Uint8Array> {
-    const pt = await crypto.subtle.decrypt(
+    const subtle = getSubtleCrypto();
+    const pt = await subtle.decrypt(
         { name: ALG, iv: ivU8 as BufferSource, additionalData: additionalDataU8 as BufferSource | undefined },
         key,
         cipherU8 as BufferSource
@@ -57,7 +67,12 @@ async function aesGcmDecrypt(
 
 function ensureNotAborted(signal?: AbortSignal): void {
     if (signal?.aborted) {
-        throw new DOMException("Aborted", "AbortError");
+        if (typeof DOMException !== "undefined") {
+            throw new DOMException("Aborted", "AbortError");
+        }
+        const error = new Error("Aborted");
+        (error as Error & { name: string }).name = "AbortError";
+        throw error;
     }
 }
 
@@ -113,13 +128,37 @@ export async function decryptToString(packedB64u: string, key: CryptoKey): Promi
     return textDecode(u8);
 }
 
+function ensureOutputTypeAvailable(output: BinaryOutputType): void {
+    if (output === "buffer" && !hasBufferSupport()) {
+        throw new Error("Buffer output requested but not available in this environment.");
+    }
+}
+
+async function toBinaryOutput(
+    data: Uint8Array,
+    mime: string,
+    output: BinaryOutputType,
+): Promise<Blob | Uint8Array | NodeBuffer> {
+    switch (output) {
+        case "blob":
+            return createBinaryBlob(data, { type: mime });
+        case "buffer":
+            ensureOutputTypeAvailable(output);
+            return toBuffer(data);
+        case "uint8array":
+        default:
+            return data;
+    }
+}
+
 export async function encryptBlob(
-    blob: Blob,
+    blob: BinaryLike,
     key: CryptoKey,
-    { compress = true, chunkSize = DEFAULT_CHUNK_SIZE, onProgress, signal }: EncryptBlobOptions = {}
+    { compress = true, chunkSize = DEFAULT_CHUNK_SIZE, mimeType, onProgress, signal }: EncryptBlobOptions = {},
 ): Promise<string> {
-    const mime = blob.type || "application/octet-stream";
-    const size = blob.size;
+    const source = createBinarySource(blob, mimeType);
+    const mime = source.mime;
+    const size = source.size;
     const CHUNK_COMPRESS_THRESHOLD = 64 * 1024 * 1024;
     const isLarge = size > CHUNK_COMPRESS_THRESHOLD;
     const aad = textEncode(`${ALG}|blob|v${VERSION}|${mime}`);
@@ -129,7 +168,7 @@ export async function encryptBlob(
     if (!isLarge) {
         ensureNotAborted(signal);
         report(0);
-        const buf = new Uint8Array(await blob.arrayBuffer());
+        const buf = await source.getChunk(0, size);
         const { compressed: wasCompressed, data } = await maybeCompress(buf, compress);
         const iv = randomIv();
         const ct = await aesGcmEncrypt(key, iv, data, aad);
@@ -146,10 +185,9 @@ export async function encryptBlob(
         return packContainer({ compressed: wasCompressed, isChunked: false, meta, payloadU8: ct });
     }
 
-    const supportsCompression = typeof CompressionStream !== "undefined";
-    const useCompression = compress && supportsCompression;
     const chunkCount = Math.ceil(size / chunkSize);
     const payloadParts: Uint8Array[] = [];
+    let chunkCompressionUsed = false;
 
     let processed = 0;
     report(0);
@@ -158,9 +196,10 @@ export async function encryptBlob(
         ensureNotAborted(signal);
         const start = i * chunkSize;
         const end = Math.min(start + chunkSize, size);
-        const u8 = new Uint8Array(await blob.slice(start, end).arrayBuffer());
-        const chunk = useCompression ? await maybeCompress(u8, true) : { data: u8, compressed: false };
+        const u8 = await source.getChunk(start, end);
+        const chunk = await maybeCompress(u8, compress);
         const { data } = chunk;
+        chunkCompressionUsed ||= chunk.compressed;
         const iv = randomIv();
         const ct = await aesGcmEncrypt(key, iv, data, aad);
         const lenU8 = u32be(ct.length);
@@ -174,21 +213,37 @@ export async function encryptBlob(
         type: "blob" as const,
         alg: ALG,
         mime,
-        compressed: useCompression,
+        compressed: chunkCompressionUsed,
         chunked: true,
         chunkSize,
         size,
     };
     const payloadU8 = concatU8(...payloadParts);
     report(size);
-    return packContainer({ compressed: useCompression, isChunked: true, meta, payloadU8 });
+    return packContainer({ compressed: chunkCompressionUsed, isChunked: true, meta, payloadU8 });
 }
 
 export async function decryptToBlob(
     packedB64u: string,
     key: CryptoKey,
-    { onProgress, signal }: DecryptBlobOptions = {}
-): Promise<Blob> {
+    options?: DecryptBlobOptions,
+): Promise<Blob>;
+export async function decryptToBlob(
+    packedB64u: string,
+    key: CryptoKey,
+    options: DecryptBlobOptions & { output: "uint8array" },
+): Promise<Uint8Array>;
+export async function decryptToBlob(
+    packedB64u: string,
+    key: CryptoKey,
+    options: DecryptBlobOptions & { output: "buffer" },
+): Promise<NodeBuffer>;
+export async function decryptToBlob(
+    packedB64u: string,
+    key: CryptoKey,
+    { onProgress, signal, output = "blob" }: DecryptBlobOptions = {},
+): Promise<Blob | Uint8Array | NodeBuffer> {
+    ensureOutputTypeAvailable(output);
     const { compressed, isChunked, meta, payloadU8 } = unpackContainer(packedB64u);
     if (meta.type !== "blob") {
         throw new Error("Content type is not blob.");
@@ -209,8 +264,7 @@ export async function decryptToBlob(
         const pt = await aesGcmDecrypt(key, iv, payloadU8, aad);
         const u8 = await maybeDecompress(pt, meta.compressed ?? false);
         report(total || u8.length);
-        const part = u8 as unknown as BlobPart;
-        return new Blob([part], { type: mime });
+        return toBinaryOutput(u8, mime, output);
     }
 
     let offset = 0;
@@ -245,6 +299,6 @@ export async function decryptToBlob(
 
     const merged = concatU8(...outParts);
     report(total || merged.length);
-    const part = merged as unknown as BlobPart;
-    return new Blob([part], { type: mime });
+    return toBinaryOutput(merged, mime, output);
 }
+

@@ -18,7 +18,8 @@
     "build": "tsc --project tsconfig.json",
     "prepublishOnly": "npm run build",
     "clean": "rm -rf dist",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "test": "npm run build && node --test test/*.test.mjs"
   },
   "keywords": [
     "crypto",
