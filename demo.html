@@ -60,6 +60,32 @@
 
 <hr/>
 
+<h2>RSA-OAEP Key Sharing Demo</h2>
+<div class="row">
+    <button id="btnShareDemo" type="button">Simulate Bob → Alice Share</button>
+</div>
+<div class="row">
+    <label>Alice Public Key (Base64URL JWK):</label>
+    <textarea id="shareAlicePublic" readonly></textarea>
+</div>
+<div class="row">
+    <label>Alice Private Key Backup (Base64URL JWK):</label>
+    <textarea id="shareAlicePrivate" readonly></textarea>
+</div>
+<div class="row">
+    <label>Wrapped AES Key for Alice:</label>
+    <textarea id="shareWrapped" readonly></textarea>
+</div>
+<div class="row">
+    <label>Unwrapped AES Key (Alice's view):</label>
+    <textarea id="shareUnwrapped" readonly></textarea>
+</div>
+<div class="row muted">
+    Generates a new AES key, wraps it with Alice's public RSA key, and verifies that Alice's private key unwraps the same key.
+</div>
+
+<hr/>
+
 <h2>Text Test</h2>
 <div class="row">
     <textarea id="plainText" placeholder="Write plain text...">Hello, encrypted world!</textarea>
@@ -128,6 +154,9 @@
         encryptString, decryptToString,
         encryptBlob, decryptToBlob,
         deriveKeyFromPassphrase, SALT_BYTES,
+        generateRsaKeyPair, wrapKeyForRecipient, unwrapKeyForRecipient,
+        exportPublicKeyToBase64, exportPrivateKeyToBase64,
+        importPublicKeyFromBase64, importPrivateKeyFromBase64,
         toBase64Url, fromBase64Url,
     } from "./dist/index.js";
 
@@ -364,6 +393,36 @@
     });
 
     $("btnCancelDec").addEventListener("click", () => decFileController?.abort());
+
+    $("btnShareDemo").addEventListener("click", async () => {
+        const button = $("btnShareDemo");
+        button.disabled = true;
+        try {
+            const alicePair = await generateRsaKeyPair();
+            const dataKey = await generateAesKey();
+
+            const alicePublicB64 = await exportPublicKeyToBase64(alicePair.publicKey);
+            const alicePrivateB64 = await exportPrivateKeyToBase64(alicePair.privateKey);
+            const bobViewPublic = await importPublicKeyFromBase64(alicePublicB64);
+            const wrapped = await wrapKeyForRecipient(bobViewPublic, dataKey);
+
+            const aliceViewPrivate = await importPrivateKeyFromBase64(alicePrivateB64);
+            const unwrapped = await unwrapKeyForRecipient(wrapped, aliceViewPrivate);
+
+            const bobSerialized = await exportKeyToBase64(dataKey);
+            const aliceSerialized = await exportKeyToBase64(unwrapped);
+
+            $("shareAlicePublic").value = alicePublicB64;
+            $("shareAlicePrivate").value = alicePrivateB64;
+            $("shareWrapped").value = wrapped;
+            $("shareUnwrapped").value = `${aliceSerialized}\n${aliceSerialized === bobSerialized ? "(Matches Bob's key)" : "(Mismatch!)"}`;
+        } catch (err) {
+            console.error(err);
+            alert("Key sharing simulation failed.");
+        } finally {
+            button.disabled = false;
+        }
+    });
 
     // init
     enableKeyActions(false);

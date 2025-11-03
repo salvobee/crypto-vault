@@ -1,7 +1,20 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deriveKeyFromPassphrase, exportKeyToBase64, generateAesKey, importKeyFromBase64, randomBytes } from '../dist/keys.js';
+import {
+    deriveKeyFromPassphrase,
+    exportKeyToBase64,
+    exportPrivateKeyToBase64,
+    exportPublicKeyToBase64,
+    generateAesKey,
+    generateRsaKeyPair,
+    importKeyFromBase64,
+    importPrivateKeyFromBase64,
+    importPublicKeyFromBase64,
+    randomBytes,
+    unwrapKeyForRecipient,
+    wrapKeyForRecipient,
+} from '../dist/keys.js';
 
 const SAMPLE_SALT = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
 
@@ -39,5 +52,26 @@ describe('key management', () => {
         assert.equal(bytes.length, 32);
         const second = randomBytes(32);
         assert.notDeepEqual(bytes, second);
+    });
+
+    it('wraps and unwraps AES keys with RSA-OAEP between two parties', async () => {
+        const dataKey = await generateAesKey();
+        const alicePair = await generateRsaKeyPair();
+
+        const alicePublicB64 = await exportPublicKeyToBase64(alicePair.publicKey);
+        const alicePrivateB64 = await exportPrivateKeyToBase64(alicePair.privateKey);
+
+        // Simulate Bob importing Alice's public key from the wire
+        const importedPublic = await importPublicKeyFromBase64(alicePublicB64);
+        const wrappedForAlice = await wrapKeyForRecipient(importedPublic, dataKey);
+
+        // Alice restores her private key locally and unwraps the shared AES key
+        const importedPrivate = await importPrivateKeyFromBase64(alicePrivateB64);
+        const unwrapped = await unwrapKeyForRecipient(wrappedForAlice, importedPrivate);
+
+        const originalSerialized = await exportKeyToBase64(dataKey);
+        const unwrappedSerialized = await exportKeyToBase64(unwrapped);
+
+        assert.equal(unwrappedSerialized, originalSerialized);
     });
 });

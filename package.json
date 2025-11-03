@@ -1,6 +1,6 @@
 {
   "name": "@salvobee/crypto-vault",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Browser crypto vault: AES-GCM 256, chunked blobs, optional gzip, base64url packaging.",
   "type": "module",
   "exports": {

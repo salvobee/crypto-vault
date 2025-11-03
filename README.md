@@ -180,6 +180,82 @@ const key = await deriveKeyFromPassphrase("correct horse battery staple", salt);
 
 > Passphrase-derived keys are convenient but generally weaker than random keys; prefer `generateAesKey()` for best security and wrap it with public-key crypto if you need sharing.
 
+### Sharing AES keys between users
+
+Use the built-in RSA-OAEP helpers to exchange a freshly generated AES key with collaborators. Each participant generates their own RSA key pair once, exports the public key (safe to share) and keeps the private key secret. Whenever you need to share an AES-GCM key, wrap it with the recipient's public key and send the wrapped blob over any channel. Only the recipient's private key can unwrap the AES key.
+
+```js
+import {
+  generateAesKey,
+  generateRsaKeyPair,
+  wrapKeyForRecipient,
+  unwrapKeyForRecipient,
+  exportPublicKeyToBase64,
+  exportPrivateKeyToBase64,
+  importPublicKeyFromBase64,
+  importPrivateKeyFromBase64,
+  exportKeyToBase64,
+} from "@salvobee/crypto-vault";
+
+// Alice creates an RSA-OAEP key pair once and stores the private key securely
+const alicePair = await generateRsaKeyPair();
+const alicePublicB64 = await exportPublicKeyToBase64(alicePair.publicKey); // share this
+const alicePrivateB64 = await exportPrivateKeyToBase64(alicePair.privateKey); // keep safe
+
+// Bob wants to send an AES key to Alice
+const dataKey = await generateAesKey();
+const alicePublicKey = await importPublicKeyFromBase64(alicePublicB64);
+const wrappedForAlice = await wrapKeyForRecipient(alicePublicKey, dataKey);
+
+// Alice restores her private key and unwraps the AES key when needed
+const alicePrivateKey = await importPrivateKeyFromBase64(alicePrivateB64);
+const aliceDataKey = await unwrapKeyForRecipient(wrappedForAlice, alicePrivateKey);
+
+// The AES key matches what Bob originally wrapped
+const bobSerialized = await exportKeyToBase64(dataKey);
+const aliceSerialized = await exportKeyToBase64(aliceDataKey);
+console.assert(bobSerialized === aliceSerialized);
+```
+
+**Security trade-offs**
+
+* RSA private keys are extractable so you can back them up or migrate devices; store the Base64URL/JWK string with the same care you would give to any other long-term secret.
+* RSA-OAEP with 4096-bit modulus is widely supported but computationally heavy; use it for short-lived key exchanges only (the AES key), not for bulk data.
+* Rotating RSA keys improves forward secrecy but requires redistributing the new public key to collaborators.
+* Want stronger forward secrecy? Combine the wrapped AES key with per-message passphrases or rotate wrapped keys frequently; full ECDH support can be built on top of these helpers if you prefer ephemeral exchanges.
+
+#### `generateRsaKeyPair(): Promise<CryptoKeyPair>`
+
+Generates a 4096-bit RSA-OAEP key pair (`["wrapKey","unwrapKey"]`, extractable) that can be backed up as JWK strings.
+
+```js
+const { publicKey, privateKey } = await generateRsaKeyPair();
+```
+
+#### `wrapKeyForRecipient(recipientPublicKey: CryptoKey, keyToWrap: CryptoKey): Promise<string>`
+
+Wraps an AES key for a collaborator using their RSA-OAEP public key and returns the wrapped blob as a Base64URL string.
+
+```js
+const wrapped = await wrapKeyForRecipient(recipientPublicKey, dataKey);
+```
+
+#### `unwrapKeyForRecipient(wrappedKeyB64: string, recipientPrivateKey: CryptoKey): Promise<CryptoKey>`
+
+Unwraps a Base64URL-wrapped AES key using the recipient's private RSA key.
+
+```js
+const dataKey = await unwrapKeyForRecipient(wrapped, privateKey);
+```
+
+#### `exportPublicKeyToBase64(key: CryptoKey): Promise<string>` & `importPublicKeyFromBase64(b64: string): Promise<CryptoKey>`
+
+Export/import RSA public keys as Base64URL-encoded JWK strings to move them between devices or share them with collaborators.
+
+#### `exportPrivateKeyToBase64(key: CryptoKey): Promise<string>` & `importPrivateKeyFromBase64(b64: string): Promise<CryptoKey>`
+
+Backup and restore RSA private keys. Treat the Base64URL string as a sensitive secret.
+
 ---
 
 ### High-level primitives
