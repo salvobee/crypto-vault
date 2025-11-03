@@ -3,6 +3,8 @@
 Universal (browser + Node.js) crypto vault — zero deps, ESM.
 Uses **AES-GCM-256** (Web Crypto API / Node WebCrypto), supports **strings** and **files/binary buffers** (small or large) with **chunked encryption**, optional **gzip** compression, and always serializes to **Base64URL** so you can store/send ciphertext as plain text (e.g. via APIs or DB).
 
+📚 **API documentation:** https://salvobee.github.io/crypto-vault/
+
 * 🔐 AES-GCM 256 (authenticated encryption)
 * 🧩 Chunked blobs for large files (images, videos, PDFs…)
 * 🗜️ Optional gzip compression
@@ -63,12 +65,11 @@ comments for every exported function. Run `npm run build` to emit `dist/index.js
 alongside `dist/index.d.ts` locally, or install the package in a TypeScript
 project to get inline documentation via your editor's hover tooltips.
 
-If you need static API pages, you can generate them from the emitted
-declarations (for example with [TypeDoc](https://typedoc.org/)):
+Static HTML docs are published automatically from `main` via GitHub Pages.
+Prefer working offline? Use the built-in script to regenerate them locally:
 
 ```bash
-npm run build
-npx typedoc --tsconfig tsconfig.docs.json --out docs/api dist/index.d.ts
+npm run docs
 ```
 
 ---

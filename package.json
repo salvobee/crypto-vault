@@ -23,7 +23,8 @@
     "prepare": "npm run build",
     "test": "npm run build && node --test ./tests/*.mjs",
     "test:watch": "npm run build && node --test --watch ./tests/",
-    "test:coverage": "npm run build && node --test --experimental-test-coverage ./tests/*.mjs"
+    "test:coverage": "npm run build && node --test --experimental-test-coverage ./tests/*.mjs",
+    "docs": "typedoc --options typedoc.json"
   },
   "keywords": [
     "crypto",
@@ -39,6 +40,7 @@
     "typescript": "^5.9.3"
   },
   "devDependencies": {
-    "@types/node": "^20.16.5"
+    "@types/node": "^20.16.5",
+    "typedoc": "^0.28.14"
   }
 }
