@@ -1,14 +1,36 @@
 {
   "name": "@salvobee/crypto-vault",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Browser crypto vault: AES-GCM 256, chunked blobs, optional gzip, base64url packaging.",
   "type": "module",
   "exports": {
     ".": {
-      "import": "./src/crypto-vault.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
-  "main": "./src/crypto-vault.js",
-  "keywords": ["crypto", "browser", "aes-gcm", "encryption", "blob", "gzip", "base64url"],
-  "license": "MIT"
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "clean": "rm -rf dist",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "crypto",
+    "browser",
+    "aes-gcm",
+    "encryption",
+    "blob",
+    "gzip",
+    "base64url"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "typescript": "^5.9.3"
+  }
 }
