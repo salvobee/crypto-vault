@@ -21,7 +21,9 @@
     "prepublishOnly": "npm run build",
     "clean": "rm -rf dist",
     "prepare": "npm run build",
-    "test": "npm run build && node --test test/*.test.mjs"
+    "test": "npm run build && node --test ./tests/*.mjs",
+    "test:watch": "npm run build && node --test --watch ./tests/",
+    "test:coverage": "npm run build && node --test --experimental-test-coverage ./tests/*.mjs"
   },
   "keywords": [
     "crypto",
@@ -35,5 +37,8 @@
   "license": "MIT",
   "dependencies": {
     "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.5"
   }
 }
