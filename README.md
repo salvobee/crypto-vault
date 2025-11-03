@@ -56,6 +56,23 @@ yarn add @salvobee/crypto-vault
 
 ---
 
+## TypeScript support & API docs
+
+The published package includes full TypeScript declarations and rich TSDoc
+comments for every exported function. Run `npm run build` to emit `dist/index.js`
+alongside `dist/index.d.ts` locally, or install the package in a TypeScript
+project to get inline documentation via your editor's hover tooltips.
+
+If you need static API pages, you can generate them from the emitted
+declarations (for example with [TypeDoc](https://typedoc.org/)):
+
+```bash
+npm run build
+npx typedoc --tsconfig tsconfig.docs.json --out docs/api dist/index.d.ts
+```
+
+---
+
 ## Runtime requirements
 
 ### Browsers

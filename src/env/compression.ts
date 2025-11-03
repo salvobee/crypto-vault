@@ -1,6 +1,9 @@
 import { isNodeEnvironment } from "./runtime.js";
 import { createBinaryBlob } from "./file.js";
 
+/**
+ * Runtime-specific compression/decompression implementation.
+ */
 export interface CompressionBinding {
     type: "browser" | "node";
     compress(data: Uint8Array): Promise<Uint8Array>;
@@ -70,6 +73,11 @@ async function createNodeBinding(): Promise<CompressionBinding | undefined> {
     }
 }
 
+/**
+ * Resolve the compression binding appropriate for the current runtime.
+ *
+ * @returns The compression binding when available, otherwise `undefined`.
+ */
 export async function getCompressionBinding(): Promise<CompressionBinding | undefined> {
     if (hasOverride) {
         return overrideBinding ?? undefined;
@@ -85,11 +93,19 @@ export async function getCompressionBinding(): Promise<CompressionBinding | unde
     return nodeBindingPromise;
 }
 
+/**
+ * Force the compression binding used by {@link getCompressionBinding}.
+ *
+ * @param binding - Custom binding or `undefined` to disable compression.
+ */
 export function setCompressionBindingOverride(binding: CompressionBinding | undefined): void {
     overrideBinding = binding ?? null;
     hasOverride = true;
 }
 
+/**
+ * Remove any previously applied override binding.
+ */
 export function clearCompressionBindingOverride(): void {
     overrideBinding = null;
     hasOverride = false;

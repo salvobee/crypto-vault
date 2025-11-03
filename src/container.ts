@@ -2,6 +2,9 @@ import { MAGIC, VERSION } from "./constants.js";
 import { concatU8, readU32be, u32be } from "./binary.js";
 import { fromBase64Url, textDecode, textEncode, toBase64Url } from "./base64.js";
 
+/**
+ * Metadata stored alongside encrypted payloads.
+ */
 export interface BaseMeta {
     type: "text" | "blob";
     alg: string;
@@ -14,6 +17,9 @@ export interface BaseMeta {
     chunked?: boolean;
 }
 
+/**
+ * Fully parsed representation of a serialized container.
+ */
 export interface PackedContainer {
     compressed: boolean;
     isChunked: boolean;
@@ -21,6 +27,15 @@ export interface PackedContainer {
     payloadU8: Uint8Array;
 }
 
+/**
+ * Serialize container metadata and payload into the Base64URL wire format.
+ *
+ * @param compressed - Whether the payload was compressed prior to encryption.
+ * @param isChunked - Whether the payload contains chunked binary data.
+ * @param meta - Metadata describing the encrypted content.
+ * @param payloadU8 - The encrypted bytes.
+ * @returns A Base64URL encoded container string.
+ */
 export function packContainer({
     compressed,
     isChunked,
@@ -43,6 +58,13 @@ export function packContainer({
     return toBase64Url(bin);
 }
 
+/**
+ * Parse a Base64URL container produced by {@link packContainer}.
+ *
+ * @param b64u - The serialized container string.
+ * @returns The parsed metadata and payload bytes.
+ * @throws If the input is not recognized as a compatible container.
+ */
 export function unpackContainer(b64u: string): PackedContainer {
     const bin = fromBase64Url(b64u);
     let offset = 0;

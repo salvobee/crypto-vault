@@ -1,5 +1,8 @@
 import { isNodeEnvironment } from "./runtime.js";
 
+/**
+ * Minimal Buffer-like shape used to avoid importing Node types in browsers.
+ */
 export type NodeBuffer = Uint8Array & {
     toString(encoding?: string): string;
     slice(start?: number, end?: number): NodeBuffer;
@@ -30,8 +33,14 @@ if (isNodeEnvironment()) {
     }
 }
 
+/**
+ * Supported inputs that can be treated as binary data.
+ */
 export type BinaryLike = Blob | ArrayBuffer | ArrayBufferView | Uint8Array | NodeBuffer;
 
+/**
+ * Normalized representation of binary data for chunked processing.
+ */
 export interface BinarySource {
     size: number;
     mime: string;
@@ -39,14 +48,28 @@ export interface BinarySource {
     getChunk(start: number, end: number): Promise<Uint8Array>;
 }
 
+/**
+ * Determine whether the current environment exposes a `Blob` constructor.
+ */
 export function hasBlobSupport(): boolean {
     return typeof BlobCtor !== "undefined";
 }
 
+/**
+ * Determine whether the current environment exposes a Node.js `Buffer` implementation.
+ */
 export function hasBufferSupport(): boolean {
     return typeof BufferCtor !== "undefined";
 }
 
+/**
+ * Create a `Blob` using the best available implementation.
+ *
+ * @param data - Blob parts or raw bytes to include.
+ * @param options - Optional blob metadata.
+ * @returns A constructed Blob instance.
+ * @throws When `Blob` is unavailable in the environment.
+ */
 export function createBinaryBlob(data: BlobPart | BlobPart[] | Uint8Array, options?: BlobPropertyBag): Blob {
     if (!BlobCtor) {
         throw new Error("Blob constructor not available in this environment.");
@@ -55,10 +78,16 @@ export function createBinaryBlob(data: BlobPart | BlobPart[] | Uint8Array, optio
     return new BlobCtor(parts, options);
 }
 
+/**
+ * Type guard that checks whether a value is a Blob instance for the current runtime.
+ */
 export function isBlobInstance(value: unknown): value is Blob {
     return !!BlobCtor && value instanceof BlobCtor;
 }
 
+/**
+ * Type guard that checks whether a value is a Node.js `Buffer` instance.
+ */
 export function isBufferInstance(value: unknown): value is NodeBuffer {
     return !!BufferCtor && BufferCtor.isBuffer(value);
 }
@@ -73,6 +102,13 @@ function ensureUint8Array(view: ArrayBuffer | ArrayBufferView | Uint8Array): Uin
     return new Uint8Array(view);
 }
 
+/**
+ * Normalize supported binary inputs into a {@link BinarySource} abstraction.
+ *
+ * @param input - Supported binary data.
+ * @param mimeType - Optional MIME type override.
+ * @returns A normalized binary source with chunk access helpers.
+ */
 export function createBinarySource(input: BinaryLike, mimeType?: string): BinarySource {
     if (isBlobInstance(input)) {
         const blob = input;
@@ -112,11 +148,24 @@ export function createBinarySource(input: BinaryLike, mimeType?: string): Binary
     };
 }
 
+/**
+ * Convert a Blob into a `Uint8Array`.
+ *
+ * @param blob - The Blob to read.
+ * @returns The blob contents as bytes.
+ */
 export async function blobToUint8Array(blob: Blob): Promise<Uint8Array> {
     const buffer = await blob.arrayBuffer();
     return new Uint8Array(buffer);
 }
 
+/**
+ * Convert a `Uint8Array` to a Node.js `Buffer`.
+ *
+ * @param data - Bytes to wrap in a Buffer.
+ * @returns A Buffer instance containing the same bytes.
+ * @throws If Buffer support is unavailable.
+ */
 export function toBuffer(data: Uint8Array): NodeBuffer {
     if (!BufferCtor) {
         throw new Error("Buffer not available in this environment.");

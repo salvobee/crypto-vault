@@ -27,6 +27,15 @@ function bufferFromBase64(str: string): Uint8Array {
     return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
 }
 
+/**
+ * Convert a binary buffer into a Base64URL string without padding.
+ *
+ * The function prefers the native `btoa` implementation when available and
+ * falls back to Node.js `Buffer` semantics when running outside the browser.
+ *
+ * @param u8 - The bytes to encode.
+ * @returns A Base64URL string (no padding characters).
+ */
 export function toBase64Url(u8: Uint8Array): string {
     if (typeof btoa === "function") {
         const CHUNK = 0x8000; // 32 KB
@@ -47,6 +56,14 @@ export function toBase64Url(u8: Uint8Array): string {
         .replace(/=+$/g, "");
 }
 
+/**
+ * Decode a Base64URL string back into a `Uint8Array`.
+ *
+ * Both browser (`atob`) and Node.js (`Buffer`) implementations are supported.
+ *
+ * @param str - The Base64URL string to decode.
+ * @returns The decoded bytes.
+ */
 export function fromBase64Url(str: string): Uint8Array {
     const b64 = str.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((str.length + 3) % 4);
     if (typeof atob === "function") {
@@ -61,10 +78,22 @@ export function fromBase64Url(str: string): Uint8Array {
     return bufferFromBase64(b64);
 }
 
+/**
+ * Encode a UTF-8 string to a `Uint8Array`.
+ *
+ * @param str - The string to encode as UTF-8.
+ * @returns The encoded UTF-8 bytes.
+ */
 export function textEncode(str: string): Uint8Array {
     return textEncoder.encode(str);
 }
 
+/**
+ * Decode a `Uint8Array` that contains UTF-8 data into a string.
+ *
+ * @param u8 - The UTF-8 encoded bytes.
+ * @returns The decoded string.
+ */
 export function textDecode(u8: Uint8Array): string {
     return textDecoder.decode(u8);
 }

@@ -19,10 +19,16 @@ interface ProgressOptions {
     signal?: AbortSignal;
 }
 
+/**
+ * Options for {@link encryptString}.
+ */
 export interface EncryptStringOptions {
     compress?: boolean;
 }
 
+/**
+ * Options for {@link encryptBlob}.
+ */
 export interface EncryptBlobOptions extends ProgressOptions {
     compress?: boolean;
     chunkSize?: number;
@@ -31,6 +37,9 @@ export interface EncryptBlobOptions extends ProgressOptions {
 
 export type BinaryOutputType = "blob" | "uint8array" | "buffer";
 
+/**
+ * Options for {@link decryptToBlob}.
+ */
 export interface DecryptBlobOptions extends ProgressOptions {
     output?: BinaryOutputType;
 }
@@ -91,6 +100,14 @@ function reportProgress(
     }
 }
 
+/**
+ * Encrypt a UTF-8 string and return a compact Base64URL container.
+ *
+ * @param plainText - The string to encrypt.
+ * @param key - AES-GCM key used for encryption.
+ * @param options - Optional compression behaviour.
+ * @returns A Base64URL string containing the encrypted payload.
+ */
 export async function encryptString(
     plainText: string,
     key: CryptoKey,
@@ -110,6 +127,14 @@ export async function encryptString(
     return packContainer({ compressed, isChunked: false, meta, payloadU8: ct });
 }
 
+/**
+ * Decrypt a Base64URL container that holds string data.
+ *
+ * @param packedB64u - The ciphertext produced by {@link encryptString}.
+ * @param key - AES-GCM key used for decryption.
+ * @returns The decrypted plaintext string.
+ * @throws If the container does not hold textual data or is chunked.
+ */
 export async function decryptToString(packedB64u: string, key: CryptoKey): Promise<string> {
     const { compressed, isChunked, meta, payloadU8 } = unpackContainer(packedB64u);
     if (isChunked) {
@@ -151,6 +176,14 @@ async function toBinaryOutput(
     }
 }
 
+/**
+ * Encrypt binary data (Blob/Buffer/Uint8Array) and return a Base64URL container.
+ *
+ * @param blob - Binary input data or Blob.
+ * @param key - AES-GCM key used for encryption.
+ * @param options - Chunking, compression and progress configuration.
+ * @returns A Base64URL string containing the encrypted payload.
+ */
 export async function encryptBlob(
     blob: BinaryLike,
     key: CryptoKey,
@@ -223,6 +256,14 @@ export async function encryptBlob(
     return packContainer({ compressed: chunkCompressionUsed, isChunked: true, meta, payloadU8 });
 }
 
+/**
+ * Decrypt a Base64URL container that holds binary data.
+ *
+ * @param packedB64u - Ciphertext produced by {@link encryptBlob}.
+ * @param key - AES-GCM key used for decryption.
+ * @param options - Output selection and progress configuration.
+ * @returns The decrypted binary content in the requested format.
+ */
 export async function decryptToBlob(
     packedB64u: string,
     key: CryptoKey,

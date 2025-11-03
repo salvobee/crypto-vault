@@ -1,6 +1,13 @@
 import { textEncode } from "./base64.js";
 import { createBinaryBlob, hasBufferSupport, toBuffer, type NodeBuffer } from "./env/file.js";
 
+/**
+ * Trigger a download of textual content or return a buffer when DOM APIs are unavailable.
+ *
+ * @param filename - The suggested file name for the download.
+ * @param text - Text content to persist.
+ * @returns The created Blob/Buffer in environments that support it, otherwise `void`.
+ */
 export function downloadText(filename: string, text: string): Blob | Uint8Array | NodeBuffer | void {
     const encoded = textEncode(text);
 
