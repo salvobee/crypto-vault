@@ -42,6 +42,21 @@
     <label>Key (Base64URL JWK):</label>
     <textarea id="keyBox" placeholder="Paste a Base64URL key here to import"></textarea>
 </div>
+<div class="row">
+    <label>Passphrase:</label>
+    <input type="text" id="passphraseInput" placeholder="Enter a shared passphrase" style="width:100%;" />
+</div>
+<div class="row" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <label style="flex:1 1 240px;">Salt (Base64URL, store next to ciphertext):</label>
+    <input type="text" id="saltInput" placeholder="Generate or paste salt" style="flex:2 1 320px;" />
+    <button id="btnGenSalt" type="button">Generate Random Salt</button>
+</div>
+<div class="row muted">
+    Reuse the <strong>same passphrase + salt</strong> later to derive the same AES key and decrypt saved ciphertexts.
+</div>
+<div class="row">
+    <button id="btnDeriveKey">Derive/Import Key from Passphrase + Salt</button>
+</div>
 
 <hr/>
 
@@ -112,6 +127,8 @@
         generateAesKey, exportKeyToBase64, importKeyFromBase64,
         encryptString, decryptToString,
         encryptBlob, decryptToBlob,
+        deriveKeyFromPassphrase, SALT_BYTES,
+        toBase64Url, fromBase64Url,
     } from "./dist/index.js";
 
     let KEY = null;
@@ -157,6 +174,35 @@
             alert("Key imported!");
         } catch {
             alert("Invalid key.");
+        }
+    });
+
+    $("btnGenSalt").addEventListener("click", () => {
+        const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
+        $("saltInput").value = toBase64Url(salt);
+    });
+
+    $("btnDeriveKey").addEventListener("click", async () => {
+        const passphrase = $("passphraseInput").value;
+        if (!passphrase) return alert("Enter a passphrase first.");
+        const saltB64 = $("saltInput").value.trim();
+        if (!saltB64) return alert("Generate or paste a salt.");
+        let salt;
+        try {
+            salt = fromBase64Url(saltB64);
+        } catch {
+            return alert("Salt must be valid Base64URL.");
+        }
+        if (salt.length !== SALT_BYTES) {
+            return alert(`Salt must be ${SALT_BYTES} bytes (Base64URL string).`);
+        }
+        try {
+            KEY = await deriveKeyFromPassphrase(passphrase, salt);
+            enableKeyActions(true);
+            alert("Key derived from passphrase!");
+        } catch (err) {
+            console.error(err);
+            alert("Could not derive key.");
         }
     });
 

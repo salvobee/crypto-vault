@@ -56,6 +56,49 @@ yarn add @salvobee/crypto-vault
 </script>
 ```
 
+### Passphrase-derived key example
+
+If you cannot store a randomly generated AES key, you can derive it later from a
+passphrase **as long as you keep the same salt**. Generate the salt once,
+persist it alongside the ciphertext (for example as a Base64URL string), and
+feed both the passphrase and the saved salt to `deriveKeyFromPassphrase`
+whenever you need to decrypt again.
+
+```js
+import {
+  SALT_BYTES,
+  deriveKeyFromPassphrase,
+  encryptString,
+  decryptToString,
+  toBase64Url,
+  fromBase64Url,
+} from "@salvobee/crypto-vault";
+
+// 1) Collect a passphrase from the user (e.g. form input)
+const passphrase = "correct horse battery staple";
+
+// 2) Generate a random salt once and store it with your ciphertext entry
+const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
+const saltB64 = toBase64Url(salt); // store this string alongside the ciphertext
+
+// 3) Derive the key and encrypt some content
+const key = await deriveKeyFromPassphrase(passphrase, salt);
+const ciphertext = await encryptString("Hello vault!", key);
+
+// Persist both ciphertext and saltB64 (Base64URL) e.g. in your database
+await saveSecret({ ciphertext, salt: saltB64 });
+
+// 4) Later, rehydrate the salt and derive the same key to decrypt
+const { ciphertext: storedCiphertext, salt: storedSaltB64 } = await loadSecret();
+const storedSalt = fromBase64Url(storedSaltB64);
+const keyAgain = await deriveKeyFromPassphrase(passphrase, storedSalt);
+const plainText = await decryptToString(storedCiphertext, keyAgain);
+```
+
+> 🔁 The same **passphrase + salt** pair always yields the same AES key. Keep
+> the salt with the ciphertext so you can reconstruct the key later, and share
+> both if collaborators need to decrypt with a shared passphrase.
+
 ---
 
 ## TypeScript support & API docs
@@ -304,6 +347,26 @@ This lets you **store, transport, and version** the ciphertext cleanly across sy
 * Optional **AAD** binds content kind and version to the authentication tag to prevent format confusion.
 * For sharing across users/devices, consider wrapping the symmetric key with **public-key** crypto and distributing encrypted key material (not part of this package yet).
 * Keep keys out of logs / analytics and **never** hard-code them.
+
+## Sharing & collaboration strategies
+
+When you need to hand encrypted data to someone else or recover it in the
+future, choose the approach that fits your threat model:
+
+* **Passphrase + salt** – Everyone agrees on the same passphrase and stores the
+  generated salt alongside the ciphertext (see the
+  [passphrase-derived key example](#passphrase-derived-key-example)). Pros:
+  nothing sensitive to download or sync, the key can always be re-derived.
+  Cons: entropy is capped by the passphrase quality, so keep the salt secret
+  from attackers and prefer longer passphrases.
+* **Random AES key** – Generate once via `generateAesKey()`, then export it and
+  distribute the Base64URL JWK via a secure channel. Pros: full 256-bit entropy.
+  Cons: the key must be stored/transported safely, and loss of the exported key
+  means permanent data loss.
+
+Some teams mix the two: store the random key encrypted with a stronger
+passphrase-derived key, or wrap it with public-key crypto to share to specific
+recipients.
 
 ---
 
