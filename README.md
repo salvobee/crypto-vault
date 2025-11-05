@@ -1,6 +1,7 @@
 # Crypto Vault
 
-Universal (browser + Node.js) crypto vault — zero deps, ESM.
+Universal (browser + Node.js) crypto vault with zero deps.
+
 Uses **AES-GCM-256** (Web Crypto API / Node WebCrypto), supports **strings** and **files/binary buffers** (small or large) with **chunked encryption**, optional **gzip** compression, and always serializes to **Base64URL** so you can store/send ciphertext as plain text (e.g. via APIs or DB).
 
 📚 **API documentation:** https://salvobee.github.io/crypto-vault/
